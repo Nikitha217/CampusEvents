@@ -1,217 +1,257 @@
-import { useState } from "react"
+import { useEffect, useState } from "react";
+
 import {
   FolderOpen,
   Plus,
   Edit,
   Trash2,
   X,
-  CalendarDays,
-} from "lucide-react"
+} from "lucide-react";
 
-import { Button } from "../../components/ui/button"
-import { Input } from "../../components/ui/input"
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 
-const initialCategories = [
-  {
-    id: "1",
-    name: "Technology",
-    events: [
-      "AI Workshop",
-      "Hackathon 2026",
-      "Web Development Bootcamp",
-    ],
-  },
-  {
-    id: "2",
-    name: "Cultural",
-    events: [
-      "Dance Competition",
-      "Music Fest",
-      "Drama Night",
-    ],
-  },
-  {
-    id: "3",
-    name: "Business",
-    events: [
-      "Startup Meetup",
-      "Marketing Seminar",
-    ],
-  },
-  {
-    id: "4",
-    name: "Sports",
-    events: [
-      "Football Tournament",
-      "Cricket League",
-    ],
-  },
-  {
-    id: "5",
-    name: "Academic",
-    events: [
-      "Research Symposium",
-      "Paper Presentation",
-    ],
-  },
-]
+import {
+  getCategories,
+  createCategory,
+  deleteCategory,
+  updateCategory,
+} from "../../services/categoryService";
 
 const Categories = () => {
 
-  const [categories, setCategories] = useState(initialCategories)
+  const [categories, setCategories] =
+    useState([]);
 
-  const [selectedCategory, setSelectedCategory] = useState(null)
+  const [loading, setLoading] =
+    useState(true);
 
-  const [showModal, setShowModal] = useState(false)
+  const [showModal, setShowModal] =
+    useState(false);
 
-  const [newCategory, setNewCategory] = useState("")
+  const [newCategory, setNewCategory] =
+    useState("");
 
-  // EDIT STATES
-  const [editModal, setEditModal] = useState(false)
+  const [description, setDescription] =
+    useState("");
 
-  const [editCategoryId, setEditCategoryId] = useState(null)
+  const [editModal, setEditModal] =
+    useState(false);
 
-  const [editCategoryName, setEditCategoryName] = useState("")
+  const [editCategoryId, setEditCategoryId] =
+    useState("");
 
-  // Delete Category
-  const handleDelete = (id) => {
-    setCategories(categories.filter((cat) => cat.id !== id))
-  }
+  const [editCategoryName, setEditCategoryName] =
+    useState("");
 
-  // Add Category
-  const handleAddCategory = () => {
+  const [editDescription, setEditDescription] =
+    useState("");
 
-    if (!newCategory.trim()) return
+  const loadCategories =
+    async () => {
 
-    const category = {
-      id: Date.now().toString(),
-      name: newCategory,
-      events: [],
-    }
+      try {
 
-    setCategories([...categories, category])
+        const data =
+          await getCategories();
 
-    setNewCategory("")
+        setCategories(data);
 
-    setShowModal(false)
-  }
+      } catch (error) {
 
-  // Open Edit Modal
-  const handleEditOpen = (cat) => {
+        console.error(error);
 
-    setEditCategoryId(cat.id)
+      } finally {
 
-    setEditCategoryName(cat.name)
+        setLoading(false);
+      }
+    };
 
-    setEditModal(true)
-  }
+  useEffect(() => {
 
-  // Save Edited Category
-  const handleEditSave = () => {
+    loadCategories();
 
-    if (!editCategoryName.trim()) return
+  }, []);
 
-    const updatedCategories = categories.map((cat) =>
+  const handleAddCategory =
+    async () => {
 
-      cat.id === editCategoryId
-        ? { ...cat, name: editCategoryName }
-        : cat
-    )
+      if (!newCategory.trim())
+        return;
 
-    setCategories(updatedCategories)
+      try {
 
-    // Update selected category if open
-    if (selectedCategory?.id === editCategoryId) {
+        await createCategory({
+          name: newCategory,
+          description,
+        });
 
-      setSelectedCategory({
-        ...selectedCategory,
-        name: editCategoryName,
-      })
-    }
+        setNewCategory("");
+        setDescription("");
+        setShowModal(false);
 
-    setEditModal(false)
+        loadCategories();
+
+      } catch (error) {
+
+        console.error(error);
+      }
+    };
+
+  const handleDelete =
+    async (id) => {
+
+      try {
+
+        await deleteCategory(id);
+
+        loadCategories();
+
+      } catch (error) {
+
+        console.error(error);
+      }
+    };
+
+  const handleEditOpen =
+    (category) => {
+
+      setEditCategoryId(
+        category.id
+      );
+
+      setEditCategoryName(
+        category.name
+      );
+
+      setEditDescription(
+        category.description || ""
+      );
+
+      setEditModal(true);
+    };
+
+  const handleEditSave =
+    async () => {
+
+      try {
+
+        await updateCategory(
+          editCategoryId,
+          {
+            name:
+              editCategoryName,
+            description:
+              editDescription,
+          }
+        );
+
+        setEditModal(false);
+
+        loadCategories();
+
+      } catch (error) {
+
+        console.error(error);
+      }
+    };
+
+  if (loading) {
+
+    return (
+      <div className="p-6">
+        Loading categories...
+      </div>
+    );
   }
 
   return (
+
     <div className="space-y-6">
 
-      {/* Header */}
       <div className="flex items-center justify-between">
 
         <div>
 
-          <h1 className="font-display text-2xl font-bold">
+          <h1 className="text-2xl font-bold">
             Categories
           </h1>
 
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground">
+
             Manage event categories
+
           </p>
 
         </div>
 
-        {/* Add Category Button */}
         <Button
-          className="gradient-primary text-white"
-          onClick={() => setShowModal(true)}
+          onClick={() =>
+            setShowModal(true)
+          }
         >
-          <Plus className="h-4 w-4 mr-1" />
+
+          <Plus className="h-4 w-4 mr-2" />
+
           Add Category
+
         </Button>
 
       </div>
 
-      {/* Categories Grid */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
 
         {categories.map((cat) => (
 
           <div
             key={cat.id}
-            onClick={() => setSelectedCategory(cat)}
-            className="bg-card border border-border rounded-lg p-5 shadow-card cursor-pointer hover:shadow-lg transition"
+            className="border rounded-xl p-5 bg-white/5 backdrop-blur-xl"
           >
 
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex justify-between">
 
-              <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                <FolderOpen className="h-5 w-5" />
-              </div>
+              <FolderOpen />
 
-              <div
-                className="flex gap-1"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <div className="flex gap-2">
 
-                {/* EDIT BUTTON */}
                 <Button
-                  size="sm"
                   variant="ghost"
-                  onClick={() => handleEditOpen(cat)}
+                  size="sm"
+                  onClick={() =>
+                    handleEditOpen(cat)
+                  }
                 >
+
                   <Edit className="h-4 w-4" />
+
                 </Button>
 
-                {/* DELETE BUTTON */}
                 <Button
-                  size="sm"
                   variant="ghost"
-                  className="text-red-500"
-                  onClick={() => handleDelete(cat.id)}
+                  size="sm"
+                  onClick={() =>
+                    handleDelete(cat.id)
+                  }
                 >
-                  <Trash2 className="h-4 w-4" />
+
+                  <Trash2 className="h-4 w-4 text-red-500" />
+
                 </Button>
 
               </div>
 
             </div>
 
-            <h3 className="font-semibold text-lg">
+            <h3 className="font-semibold mt-4">
+
               {cat.name}
+
             </h3>
 
-            <p className="text-sm text-muted-foreground">
-              {cat.events.length} events
+            <p className="text-sm text-slate-500 mt-2">
+
+              {cat.description}
+
             </p>
 
           </div>
@@ -220,166 +260,105 @@ const Categories = () => {
 
       </div>
 
-      {/* Events Section */}
-      {selectedCategory && (
+      {/* ADD MODAL */}
 
-        <div className="bg-white border rounded-xl p-5 shadow-sm">
+      {showModal && (
 
-          <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
 
-            <div>
+          <div className="bg-white/5 backdrop-blur-xl rounded-xl p-6 w-full max-w-md">
 
-              <h2 className="text-xl font-bold">
-                {selectedCategory.name} Events
-              </h2>
+            <h2 className="font-bold text-xl mb-4">
 
-              <p className="text-muted-foreground text-sm">
-                Available events in this category
-              </p>
+              Add Category
 
-            </div>
+            </h2>
+
+            <Input
+              placeholder="Category Name"
+              value={newCategory}
+              onChange={(e) =>
+                setNewCategory(
+                  e.target.value
+                )
+              }
+            />
+
+            <textarea
+              className="w-full border rounded-2xl p-3 mt-4"
+              placeholder="Description"
+              value={description}
+              onChange={(e) =>
+                setDescription(
+                  e.target.value
+                )
+              }
+            />
 
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedCategory(null)}
+              className="w-full mt-4"
+              onClick={
+                handleAddCategory
+              }
             >
-              <X className="h-4 w-4 mr-1" />
-              Close
+
+              Create Category
+
             </Button>
 
           </div>
 
-          {selectedCategory.events.length > 0 ? (
-
-            <div className="space-y-3">
-
-              {selectedCategory.events.map((event, index) => (
-
-                <div
-                  key={index}
-                  className="flex items-center gap-3 border rounded-lg px-4 py-3"
-                >
-
-                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                    <CalendarDays className="h-5 w-5 text-blue-600" />
-                  </div>
-
-                  <div>
-
-                    <h4 className="font-medium">
-                      {event}
-                    </h4>
-
-                    <p className="text-sm text-muted-foreground">
-                      Event #{index + 1}
-                    </p>
-
-                  </div>
-
-                </div>
-
-              ))}
-
-            </div>
-
-          ) : (
-
-            <div className="text-center py-10 text-muted-foreground">
-              No events available in this category
-            </div>
-
-          )}
-
         </div>
 
       )}
 
-      {/* ADD CATEGORY MODAL */}
-      {showModal && (
+      {/* EDIT MODAL */}
 
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-
-            <div className="flex items-center justify-between mb-4">
-
-              <h2 className="text-xl font-bold">
-                Add New Category
-              </h2>
-
-              <button
-                onClick={() => setShowModal(false)}
-              >
-                <X className="h-5 w-5" />
-              </button>
-
-            </div>
-
-            <div className="space-y-4">
-
-              <Input
-                placeholder="Enter category name"
-                value={newCategory}
-                onChange={(e) =>
-                  setNewCategory(e.target.value)
-                }
-              />
-
-              <Button
-                className="w-full gradient-primary text-white"
-                onClick={handleAddCategory}
-              >
-                Add Category
-              </Button>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
-      {/* EDIT CATEGORY MODAL */}
       {editModal && (
 
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
 
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+          <div className="bg-white/5 backdrop-blur-xl rounded-xl p-6 w-full max-w-md">
 
-            <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-xl mb-4">
 
-              <h2 className="text-xl font-bold">
-                Edit Category
-              </h2>
+              Edit Category
 
-              <button
-                onClick={() => setEditModal(false)}
-              >
-                <X className="h-5 w-5" />
-              </button>
+            </h2>
 
-            </div>
+            <Input
+              value={
+                editCategoryName
+              }
+              onChange={(e) =>
+                setEditCategoryName(
+                  e.target.value
+                )
+              }
+            />
 
-            <div className="space-y-4">
+            <textarea
+              className="w-full border rounded-2xl p-3 mt-4"
+              value={
+                editDescription
+              }
+              onChange={(e) =>
+                setEditDescription(
+                  e.target.value
+                )
+              }
+            />
 
-              <Input
-                placeholder="Edit category name"
-                value={editCategoryName}
-                onChange={(e) =>
-                  setEditCategoryName(e.target.value)
-                }
-              />
+            <Button
+              className="w-full mt-4"
+              onClick={
+                handleEditSave
+              }
+            >
 
-              <Button
-                className="w-full gradient-primary text-white"
-                onClick={handleEditSave}
-              >
-                Save Changes
-              </Button>
+              Save Changes
 
-            </div>
+            </Button>
 
           </div>
 
@@ -388,7 +367,7 @@ const Categories = () => {
       )}
 
     </div>
-  )
-}
+  );
+};
 
-export default Categories
+export default Categories;

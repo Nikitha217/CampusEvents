@@ -1,527 +1,478 @@
-import { useState } from "react";
-
+import { useState, useEffect } from "react";
+import API from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../../hooks/use-toast";
 import {
   Calendar,
   Award,
-  Bell,
   ClipboardCheck,
   MapPin,
-  Users,
   X,
-  CreditCard,
+  ArrowRight,
+  Users,
 } from "lucide-react";
-
-import {
-  SiGooglepay,
-  SiPhonepe,
-  SiPaytm,
-} from "react-icons/si";
-
 import StatCard from "../../components/StatCard";
-import SuccessModal from "../../components/SuccessModal";
-import { mockEvents as eventsData } from "../../data/mockEvents";
-
-const images = {
-  Technology:
-    "https://images.unsplash.com/photo-1511578314322-379afb476865?q=80&w=1200&auto=format&fit=crop",
-
-  Cultural:
-    "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=1200&auto=format&fit=crop",
-
-  Business:
-    "https://images.unsplash.com/photo-1552664730-d307ca884978?q=80&w=1200&auto=format&fit=crop",
-};
 
 const StudentDashboard = () => {
-
-  const [events, setEvents] = useState(
-    eventsData.map((event) => ({
-      ...event,
-      registeredCount: event.registeredCount || 0,
-      capacity: event.capacity || 100,
-      price: event.price || 299,
-    }))
-  );
-
-  const [open, setOpen] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
 
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [stats, setStats] = useState({
+    totalEvents: 0,
+    registeredEvents: 0,
+    upcomingEvents: 0,
+    certificates: 0,
+  });
 
-  const [paymentModal, setPaymentModal] = useState(false);
+  const [registeredEventIds, setRegisteredEventIds] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [registeringId, setRegisteringId] = useState(null);
 
-  const [selectedPayment, setSelectedPayment] =
-    useState("");
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
+    }
+  }, [user]);
 
-  // Open Payment Modal
-  const openPayment = (event) => {
-    setSelectedEvent(event);
-    setPaymentModal(true);
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+
+      const [statsRes, eventsRes, regRes] = await Promise.all([
+        API.get("/dashboard/student"),
+        API.get("/events/approved"),
+        user?.email
+          ? API.get(`/registrations/student/${user.email}`)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      setStats(statsRes.data || {});
+
+      const normalizedEvents = (eventsRes.data || []).map((event) => ({
+        ...event,
+        id: event.id || event._id,
+      }));
+
+      setUpcomingEvents(normalizedEvents);
+
+      const ids = new Set(
+        (regRes.data || []).map((registration) =>
+          String(registration.eventId)
+        )
+      );
+
+      setRegisteredEventIds(ids);
+    } catch (error) {
+      console.error("Dashboard fetch error:", error);
+
+      toast({
+        title: "Error",
+        description: "Failed to load dashboard data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Handle Payment
-  const handlePayment = () => {
+  const handleViewEvent = async (eventId) => {
+    try {
+      const response = await API.get(`/events/${eventId}`);
 
-    if (!selectedPayment) {
-      alert("Please select payment method");
+      setSelectedEvent({
+        ...response.data,
+        id: response.data.id || response.data._id,
+      });
+    } catch (error) {
+      console.error("Failed to load event details", error);
+
+      toast({
+        title: "Error",
+        description: "Unable to load event details",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRegister = async (event) => {
+    if (!user) {
+      toast({
+        title: "Please login first",
+        variant: "destructive",
+      });
       return;
     }
 
-    const updatedEvents = events.map((e) =>
-      e.id === selectedEvent.id
-        ? {
-            ...e,
-            registeredCount: e.registeredCount + 1,
-          }
-        : e
-    );
+    if (registeredEventIds.has(String(event.id))) {
+      toast({
+        title: "Already Registered",
+        description: "You are already registered for this event.",
+      });
+      return;
+    }
 
-    setEvents(updatedEvents);
+    try {
+      setRegisteringId(event.id);
 
-    const updatedEvent = updatedEvents.find(
-      (e) => e.id === selectedEvent.id
-    );
+      await API.post("/registrations", {
+        studentName: user.name,
+        studentEmail: user.email,
+        eventId: event.id,
+        eventTitle: event.title,
+        status: "PENDING",
+      });
 
-    setSelectedEvent(updatedEvent);
+      setRegisteredEventIds((prev) => {
+        const updated = new Set(prev);
+        updated.add(String(event.id));
+        return updated;
+      });
 
-    setPaymentModal(false);
+      setStats((prev) => ({
+        ...prev,
+        registeredEvents: (prev.registeredEvents || 0) + 1,
+      }));
 
-    setOpen(true);
+      toast({
+        title: "Registration Successful 🎉",
+        description: `You have registered for ${event.title}`,
+      });
+    } catch (error) {
+      console.error("Registration Error:", error);
+
+      const message =
+        typeof error.response?.data === "string"
+          ? error.response.data
+          : "Registration failed. Please try again.";
+
+      toast({
+        title: "Registration Failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setRegisteringId(null);
+    }
   };
 
+  if (loading) {
+    return (
+      <div className="space-y-8 animate-pulse">
+        <div className="h-10 w-64 bg-white/5 rounded-xl"></div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          {[...Array(4)].map((_, index) => (
+            <div
+              key={index}
+              className="h-32 bg-white/5 rounded-2xl"
+            ></div>
+          ))}
+        </div>
+
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, index) => (
+            <div
+              key={index}
+              className="h-80 bg-white/5 rounded-2xl"
+            ></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 p-2">
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white">
+            Student Dashboard
+          </h1>
 
-      {/* Heading */}
-      <div>
+          <p className="text-slate-400 mt-1">
+            Welcome back,{" "}
+            <span className="text-purple-400 font-medium">
+              {user?.name}
+            </span>
+          </p>
+        </div>
 
-        <h1 className="text-3xl font-bold text-slate-800">
-          Student Dashboard
-        </h1>
-
-        <p className="text-gray-500 mt-1">
-          Welcome back! Here's your event overview.
-        </p>
-
+        <div className="hidden md:flex h-12 w-12 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#A855F7] items-center justify-center shadow-lg shadow-purple-500/30">
+          <span className="text-white font-bold text-lg">
+            {user?.name?.charAt(0)}
+          </span>
+        </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <StatCard
+          title="Registered Events"
+          value={stats.registeredEvents || 0}
+          icon={Calendar}
+          variant="primary"
+        />
 
-        <div className="hover:scale-105 transition duration-300">
-          <StatCard
-            title="Registered"
-            value={4}
-            icon={Calendar}
-            variant="primary"
-          />
-        </div>
+        <StatCard
+          title="Events Available"
+          value={stats.totalEvents || 0}
+          icon={ClipboardCheck}
+        />
 
-        <div className="hover:scale-105 transition duration-300">
-          <StatCard
-            title="Attended"
-            value={12}
-            icon={ClipboardCheck}
-          />
-        </div>
-
-        <div className="hover:scale-105 transition duration-300">
-          <StatCard
-            title="Certificates"
-            value={8}
-            icon={Award}
-          />
-        </div>
-
-        <div className="hover:scale-105 transition duration-300">
-          <StatCard
-            title="Notifications"
-            value={5}
-            icon={Bell}
-            variant="accent"
-          />
-        </div>
-
+        <StatCard
+          title="Certificates Earned"
+          value={stats.certificates || 0}
+          icon={Award}
+        />
       </div>
 
-      {/* Events */}
+      {/* Events Section */}
       <div>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-white">
+            Upcoming Events
+          </h2>
 
-        <h2 className="text-2xl font-semibold mb-5">
-          Upcoming Events
-        </h2>
+          <span className="text-sm text-slate-400">
+            {upcomingEvents.length} events available
+          </span>
+        </div>
 
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {upcomingEvents.map((event) => {
+            const isRegistered = registeredEventIds.has(
+              String(event.id)
+            );
 
-          {events
-            .filter((e) => e.status === "upcoming")
-            .slice(0, 3)
-            .map((event) => (
+            const isRegistering = registeringId === event.id;
 
+            return (
               <div
                 key={event.id}
-                className="
-                  bg-white rounded-3xl overflow-hidden
-                  shadow-md border
-                  hover:-translate-y-2 hover:shadow-2xl
-                  transition-all duration-500 group
-                "
+                className="bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 shadow-lg shadow-purple-500/10 hover:shadow-xl hover:shadow-purple-500/20 hover:-translate-y-1 transition-all duration-300 group"
               >
+                <div className="relative h-52 overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#7C3AED] to-[#5B21B6]" />
 
-                {/* Image */}
-                <div className="relative h-56 overflow-hidden">
+                  {event?.image && (() => {
+                    const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api").replace("/api", "");
+                    let safeImage = "/placeholder-event.png";
+                    if (event.image && typeof event.image === "string") {
+                      safeImage = event.image.startsWith("/") ? `${API_BASE}${event.image}` : event.image;
+                    }
+                    return (
+                      <img
+                        src={safeImage}
+                        alt={event.title}
+                        className="relative w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        onError={(e) => { e.currentTarget.src = "/placeholder-event.png"; }}
+                      />
+                    );
+                  })()}
 
-                  <img
-                    src={images[event.category]}
-                    alt={event.title}
-                    className="
-                      w-full h-full object-cover
-                      group-hover:scale-110
-                      transition duration-700
-                    "
-                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/80 via-transparent to-transparent" />
 
-                  <div className="absolute inset-0 bg-black/30" />
+                  {isRegistered && (
+                    <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-green-500/30 border border-green-500/40 text-green-300 text-xs font-semibold backdrop-blur-md">
+                      ✓ Registered
+                    </div>
+                  )}
 
-                  <span className="absolute top-4 left-4 bg-white text-black px-4 py-1 rounded-full text-xs font-semibold shadow">
-                    {event.category}
-                  </span>
-
+                  {event.maxParticipants && (
+                    <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md text-xs text-slate-300">
+                      <Users className="h-3 w-3" />
+                      Capacity: {event.maxParticipants}
+                    </div>
+                  )}
                 </div>
 
-                {/* Content */}
                 <div className="p-5 space-y-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">
+                      {event.title}
+                    </h3>
 
-                  <h3 className="font-bold text-xl group-hover:text-blue-600 transition">
-                    {event.title}
-                  </h3>
-
-                  <p className="text-sm text-gray-500 line-clamp-2">
-                    {event.description}
-                  </p>
-
-                  {/* Details */}
-                  <div className="space-y-3 text-sm text-gray-700">
-
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-blue-600" />
-                      {event.date}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-red-500" />
-                      {event.location}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-green-600" />
-                      {event.registeredCount}/
-                      {event.capacity} Registered
-                    </div>
-
-                  </div>
-
-                  {/* Price */}
-                  <div className="flex items-center justify-between">
-
-                    <p className="text-2xl font-bold text-green-600">
-                      ₹{event.price}
+                    <p className="text-sm text-slate-400 mt-1 line-clamp-2">
+                      {event.description}
                     </p>
-
                   </div>
 
-                  {/* Buttons */}
-                  <div className="flex gap-3 pt-2">
+                  <div className="space-y-2 text-sm text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-purple-400" />
+                      {event.startDate || event.date || "TBA"}
+                    </div>
 
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-purple-400" />
+                      {event.location || "TBA"}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-1">
                     <button
-                      onClick={() => setSelectedEvent(event)}
-                      className="
-                        flex-1 border border-gray-300
-                        rounded-xl py-2.5 font-medium
-                        hover:bg-gray-100
-                        transition
-                      "
+                      onClick={() => handleViewEvent(event.id)}
+                      className="flex-1 border border-white/15 rounded-xl py-2.5 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-all"
                     >
-                      View Details
+                      View Event
                     </button>
 
                     <button
-                      onClick={() => openPayment(event)}
-                      className="
-                        flex-1 rounded-xl py-2.5 text-white font-medium
-                        bg-gradient-to-r from-blue-700 to-teal-500
-                        hover:scale-105
-                        transition
-                      "
+                      onClick={() => handleRegister(event)}
+                      disabled={isRegistered || isRegistering}
+                      className={`flex-1 rounded-xl py-2.5 text-sm text-white font-medium transition-all duration-300 ${
+                        isRegistered
+                          ? "bg-green-600/50 cursor-not-allowed"
+                          : "bg-gradient-to-r from-[#7C3AED] to-[#A855F7]"
+                      }`}
                     >
-                      Register
+                      {isRegistering
+                        ? "Registering..."
+                        : isRegistered
+                        ? "Registered ✓"
+                        : "Register"}
                     </button>
-
                   </div>
-
                 </div>
-
               </div>
-
-            ))}
-
+            );
+          })}
         </div>
 
+        {upcomingEvents.length === 0 && (
+          <div className="text-center py-20 text-slate-500">
+            <Calendar className="h-12 w-12 mx-auto mb-4 text-slate-600" />
+
+            <p className="text-lg font-medium">
+              No upcoming events
+            </p>
+
+            <p className="text-sm mt-1">
+              Check back later for new events
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Event Details Modal */}
-      {selectedEvent && !paymentModal && (
-
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-
-          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-2xl">
-
+      {/* Event Modal */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1E293B]/95 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden shadow-2xl shadow-purple-500/20 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="relative">
-
-              <img
-                src={images[selectedEvent.category]}
-                alt={selectedEvent.title}
-                className="w-full h-72 object-cover"
-              />
+              {selectedEvent?.image && (() => {
+                const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api").replace("/api", "");
+                let safeImage = "/placeholder-event.png";
+                if (selectedEvent.image && typeof selectedEvent.image === "string") {
+                  safeImage = selectedEvent.image.startsWith("/") ? `${API_BASE}${selectedEvent.image}` : selectedEvent.image;
+                }
+                return (
+                  <img
+                    src={safeImage}
+                    alt={selectedEvent.title}
+                    className="w-full h-64 object-cover"
+                    onError={(e) => { e.currentTarget.src = "/placeholder-event.png"; }}
+                  />
+                );
+              })()}
 
               <button
                 onClick={() => setSelectedEvent(null)}
-                className="
-                  absolute top-4 right-4
-                  bg-white p-2 rounded-full
-                  hover:bg-gray-100 transition
-                "
+                className="absolute top-4 right-4 bg-black/40 p-2 rounded-full text-white"
               >
                 <X className="h-5 w-5" />
               </button>
-
             </div>
 
             <div className="p-6 space-y-5">
-
               <div>
-
-                <h2 className="text-3xl font-bold text-slate-800">
+                <h2 className="text-2xl font-bold text-white">
                   {selectedEvent.title}
                 </h2>
 
-                <p className="text-gray-500 mt-2">
+                <p className="text-slate-300 mt-3">
                   {selectedEvent.description}
                 </p>
-
               </div>
 
-              <button
-                onClick={() => openPayment(selectedEvent)}
-                className="
-                  w-full py-3 rounded-2xl text-white text-lg font-semibold
-                  bg-gradient-to-r from-blue-700 to-teal-500
-                  hover:scale-[1.02]
-                  transition
-                "
-              >
-                Proceed To Payment
-              </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-slate-500">Category</p>
+                  <p className="text-white">{selectedEvent.category}</p>
+                </div>
 
+                <div>
+                  <p className="text-slate-500">Status</p>
+                  <p className="text-green-400">{selectedEvent.status}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Start Date</p>
+                  <p className="text-white">{selectedEvent.startDate}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">End Date</p>
+                  <p className="text-white">{selectedEvent.endDate}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Start Time</p>
+                  <p className="text-white">{selectedEvent.startTime}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">End Time</p>
+                  <p className="text-white">{selectedEvent.endTime}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Duration</p>
+                  <p className="text-white">{selectedEvent.duration}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Capacity</p>
+                  <p className="text-white">{selectedEvent.maxParticipants}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Location</p>
+                  <p className="text-white">{selectedEvent.location}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-500">Coordinator</p>
+                  <p className="text-white">
+                    {selectedEvent.coordinatorName}
+                  </p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <p className="text-slate-500">Coordinator Email</p>
+                  <p className="text-white">
+                    {selectedEvent.coordinatorEmail}
+                  </p>
+                </div>
+              </div>
+
+              {!registeredEventIds.has(String(selectedEvent.id)) && (
+                <button
+                  onClick={() => {
+                    handleRegister(selectedEvent);
+                    setSelectedEvent(null);
+                  }}
+                  className="w-full rounded-2xl py-3 text-white font-semibold bg-gradient-to-r from-[#7C3AED] to-[#A855F7]"
+                >
+                  Register Now
+                </button>
+              )}
             </div>
-
           </div>
-
         </div>
-
       )}
-
-      {/* Payment Modal */}
-      {paymentModal && selectedEvent && (
-
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl">
-
-            {/* Header */}
-            <div className="flex items-center justify-between mb-5">
-
-              <h2 className="text-2xl font-bold">
-                Payment Options
-              </h2>
-
-              <button
-                onClick={() => setPaymentModal(false)}
-              >
-                <X className="h-5 w-5" />
-              </button>
-
-            </div>
-
-            {/* Event */}
-            <div className="bg-gray-100 rounded-2xl p-4 mb-5">
-
-              <h3 className="font-bold text-lg">
-                {selectedEvent.title}
-              </h3>
-
-              <p className="text-gray-500 text-sm mt-1">
-                Registration Fee
-              </p>
-
-              <p className="text-3xl font-bold text-green-600 mt-2">
-                ₹{selectedEvent.price}
-              </p>
-
-            </div>
-
-            {/* UPI */}
-            <div className="space-y-4">
-
-              {/* GPay */}
-              <button
-                onClick={() => setSelectedPayment("GPay")}
-                className={`w-full border rounded-2xl p-4 flex items-center justify-between transition ${
-                  selectedPayment === "GPay"
-                    ? "border-blue-600 bg-blue-50"
-                    : "hover:border-blue-400"
-                }`}
-              >
-
-                <div className="flex items-center gap-4">
-
-                  <SiGooglepay className="text-4xl text-blue-600" />
-
-                  <div className="text-left">
-
-                    <p className="font-semibold">
-                      Google Pay
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      Pay using UPI
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </button>
-
-              {/* PhonePe */}
-              <button
-                onClick={() => setSelectedPayment("PhonePe")}
-                className={`w-full border rounded-2xl p-4 flex items-center justify-between transition ${
-                  selectedPayment === "PhonePe"
-                    ? "border-purple-600 bg-purple-50"
-                    : "hover:border-purple-400"
-                }`}
-              >
-
-                <div className="flex items-center gap-4">
-
-                  <SiPhonepe className="text-4xl text-purple-600" />
-
-                  <div className="text-left">
-
-                    <p className="font-semibold">
-                      PhonePe
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      Fast UPI Payment
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </button>
-
-              {/* Paytm */}
-              <button
-                onClick={() => setSelectedPayment("Paytm")}
-                className={`w-full border rounded-2xl p-4 flex items-center justify-between transition ${
-                  selectedPayment === "Paytm"
-                    ? "border-cyan-600 bg-cyan-50"
-                    : "hover:border-cyan-400"
-                }`}
-              >
-
-                <div className="flex items-center gap-4">
-
-                  <SiPaytm className="text-4xl text-cyan-600" />
-
-                  <div className="text-left">
-
-                    <p className="font-semibold">
-                      Paytm
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      Wallet & UPI
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </button>
-
-              {/* Card */}
-              <button
-                onClick={() => setSelectedPayment("Card")}
-                className={`w-full border rounded-2xl p-4 flex items-center justify-between transition ${
-                  selectedPayment === "Card"
-                    ? "border-black bg-gray-100"
-                    : "hover:border-gray-400"
-                }`}
-              >
-
-                <div className="flex items-center gap-4">
-
-                  <CreditCard className="h-9 w-9" />
-
-                  <div className="text-left">
-
-                    <p className="font-semibold">
-                      Credit / Debit Card
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      Visa, Mastercard & More
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </button>
-
-            </div>
-
-            {/* Button */}
-            <button
-              onClick={handlePayment}
-              className="
-                w-full mt-6 py-3 rounded-2xl
-                text-white font-semibold text-lg
-                bg-gradient-to-r from-blue-700 to-teal-500
-                hover:scale-[1.02]
-                transition
-              "
-            >
-              Pay & Register
-            </button>
-
-          </div>
-
-        </div>
-
-      )}
-
-      {/* Success Modal */}
-      <SuccessModal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="🎉 Payment Successful!"
-        message="You have successfully registered for the event."
-      />
-
     </div>
   );
 };

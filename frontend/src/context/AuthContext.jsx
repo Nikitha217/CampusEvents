@@ -1,85 +1,80 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import API, { getCookie, setCookie, deleteCookie } from "../services/api";
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
-// Demo users
-const USERS = {
-  "student@eventora.com": {
-    id: "1",
-    name: "Alex Johnson",
-    email: "student@eventora.com",
-    role: "student",
-    password: "password",
-  },
-
-  "coordinator@eventora.com": {
-    id: "2",
-    name: "Sarah Williams",
-    email: "coordinator@eventora.com",
-    role: "coordinator",
-    password: "password",
-  },
-
-  "admin@eventora.com": {
-    id: "3",
-    name: "Mike Chen",
-    email: "admin@eventora.com",
-    role: "admin",
-    password: "password",
-  },
+const normalizeRole = (role) => {
+  if (!role) return "student";
+  return role.replace(/^ROLE_/i, "").toLowerCase();
 };
 
 export const AuthProvider = ({ children }) => {
+  const [user, setUser]       = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem("eventora_user");
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
+  /* ── Restore session on page refresh ───────────────────────────────────── */
+  useEffect(() => {
+    const initializeAuth = async () => {
+      const token = getCookie("token");
+      if (!token) { setLoading(false); return; }
 
-  const login = useCallback((email, password) => {
+      try {
+        // /auth/test-auth is protected — uses JWT from cookie
+        const response = await API.get("/auth/test-auth");
+        const data = response.data;
 
-    const foundUser = USERS[email];
-
-    if (!foundUser || foundUser.password !== password) {
-      throw new Error("Invalid email or password");
-    }
-
-    const { password: removed, ...userData } = foundUser;
-
-    setUser(userData);
-    localStorage.setItem("eventora_user", JSON.stringify(userData));
-
-  }, []);
-
-  const register = useCallback((name, email, password, role) => {
-
-    const newUser = {
-      id: Date.now().toString(),
-      name,
-      email,
-      role,
+        const normalizedUser = {
+          id:    data.id,
+          name:  data.name,
+          email: data.email,
+          role:  normalizeRole(data.roles?.[0] || "student"),
+        };
+        setUser(normalizedUser);
+      } catch (error) {
+        deleteCookie("token");
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    setUser(newUser);
-    localStorage.setItem("eventora_user", JSON.stringify(newUser));
-
+    initializeAuth();
   }, []);
 
-  const logout = useCallback(() => {
+  /* ── Login ──────────────────────────────────────────────────────────────── */
+  const login = (userData, token) => {
+    const cleanToken = token?.startsWith("Bearer ") ? token.substring(7) : token;
+    setCookie("token", cleanToken);
 
+    const normalizedUser = {
+      id:    userData.id,
+      name:  userData.name,
+      email: userData.email,
+      role:  normalizeRole(userData.role || "student"),
+    };
+    setUser(normalizedUser);
+  };
+
+  /* ── Logout ─────────────────────────────────────────────────────────────── */
+  const logout = () => {
+    deleteCookie("token");
     setUser(null);
-    localStorage.removeItem("eventora_user");
+  };
 
-  }, []);
+  /* ── Update user in context ─────────────────────────────────────────────── */
+  const updateUser = (updatedData) => {
+    setUser((prev) => (prev ? { ...prev, ...updatedData } : null));
+  };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user,
+        loading,
         login,
-        register,
         logout,
+        updateUser,
+        isAuthenticated: !!user,
       }}
     >
       {children}
@@ -88,12 +83,7 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => {
-
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
-
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
+  return ctx;
 };
