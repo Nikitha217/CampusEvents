@@ -22,3 +22,28 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Node modules
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Maven wrapper download (don't ignore .mvn)
+backend/apache-maven-3.9.16-bin/
+
+# Uploads
+backend/uploads/
+
+# ZIP files
+*.zip
+
+# Build folders
+target/
+dist/
+build/
+
+# IDE
+.vscode/
+
+# Environment
+.env
+.env.*
